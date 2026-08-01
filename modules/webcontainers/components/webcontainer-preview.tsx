@@ -145,13 +145,76 @@ const WebContainerPreview = ({
 
         // Step-3 Install dependencies
 
+        // Skip install if node_modules already exists (speeds up revisits)
+        let nodeModulesExists = false;
+        try {
+          const rootEntries = await instance.fs.readdir(".");
+          nodeModulesExists = rootEntries.includes("node_modules");
+        } catch (e) {
+          nodeModulesExists = false;
+        }
+
+        if (nodeModulesExists) {
+          if (terminalRef.current?.writeToTerminal) {
+            terminalRef.current.writeToTerminal(
+              "✅ node_modules already present, skipping install\r\n"
+            );
+          }
+          setLoadingState((prev) => ({
+            ...prev,
+            installing: false,
+            starting: true,
+          }));
+          setCurrentStep(4);
+
+          if (terminalRef.current?.writeToTerminal) {
+            terminalRef.current.writeToTerminal(
+              "🚀 Starting development server...\r\n"
+            );
+          }
+
+          const startProcess = await instance.spawn("npm", ["run", "start"]);
+
+          instance.on("server-ready", (port: number, url: string) => {
+            if (terminalRef.current?.writeToTerminal) {
+              terminalRef.current.writeToTerminal(
+                `🌐 Server ready at ${url}\r\n`
+              );
+            }
+            setPreviewUrl(url);
+            setLoadingState((prev) => ({
+              ...prev,
+              starting: false,
+              ready: true,
+            }));
+            setIsSetupComplete(true);
+            setIsSetupInProgress(false);
+          });
+
+          startProcess.output.pipeTo(
+            new WritableStream({
+              write(data) {
+                if (terminalRef.current?.writeToTerminal) {
+                  terminalRef.current.writeToTerminal(data);
+                }
+              },
+            })
+          );
+          return;
+        }
+
         if (terminalRef.current?.writeToTerminal) {
           terminalRef.current.writeToTerminal(
             "📦 Installing dependencies...\r\n"
           );
         }
 
-        const installProcess = await instance.spawn("npm", ["install"]);
+        const installProcess = await instance.spawn("npm", [
+          "install",
+          "--no-audit",
+          "--no-fund",
+          "--prefer-offline",
+        ]);
 
         installProcess.output.pipeTo(
           new WritableStream({

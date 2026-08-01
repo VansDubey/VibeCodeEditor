@@ -15,20 +15,42 @@ interface UseWebContaierReturn {
   destory: () => void;
 }
 
+// Module-level singleton: the booted WebContainer instance is shared across
+// all playground visits within the same browser session, so we don't pay the
+// boot cost on every navigation. Teardown only happens on explicit destroy()
+// or full page reload (module state resets).
+let sharedInstancePromise: Promise<WebContainer> | null = null;
+let sharedInstance: WebContainer | null = null;
+
+function getSharedInstance(): Promise<WebContainer> {
+  if (sharedInstance) {
+    return Promise.resolve(sharedInstance);
+  }
+  if (!sharedInstancePromise) {
+    sharedInstancePromise = WebContainer.boot().then((wc) => {
+      sharedInstance = wc;
+      return wc;
+    });
+  }
+  return sharedInstancePromise;
+}
+
 export const useWebContainer = ({
   templateData,
 }: UseWebContainerProps): UseWebContaierReturn => {
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [instance, setInstance] = useState<WebContainer | null>(null);
+  const [instance, setInstance] = useState<WebContainer | null>(
+    sharedInstance
+  );
 
   useEffect(() => {
     let mounted = true;
 
     async function initializeWebContainer() {
       try {
-        const webcontainerInstance = await WebContainer.boot();
+        const webcontainerInstance = await getSharedInstance();
 
         if (!mounted) return;
 
@@ -47,13 +69,18 @@ export const useWebContainer = ({
       }
     }
 
-    initializeWebContainer();
+    // If we already have a shared instance cached, resolve immediately.
+    if (sharedInstance) {
+      setInstance(sharedInstance);
+      setIsLoading(false);
+    } else {
+      initializeWebContainer();
+    }
 
+    // Note: we intentionally do NOT teardown on unmount so the instance is
+    // reused across playground visits. Only destroy() tears it down.
     return () => {
       mounted = false;
-      if (instance) {
-        instance.teardown();
-      }
     };
   }, []);
 
@@ -82,13 +109,23 @@ export const useWebContainer = ({
     [instance]
   );
 
-  const destory = useCallback(()=>{
-    if(instance){
-        instance.teardown()
-        setInstance(null);
-        setServerUrl(null)
+  const destory = useCallback(() => {
+    if (sharedInstance) {
+      sharedInstance.teardown();
+      sharedInstance = null;
+      sharedInstancePromise = null;
     }
-  },[instance])
+    setInstance(null);
+    setServerUrl(null);
+  }, []);
 
-  return {serverUrl , isLoading , error , instance , writeFileSync , destory}
+  return {
+    serverUrl,
+    isLoading,
+    error,
+    instance,
+    writeFileSync,
+    destory,
+  };
 };
+
