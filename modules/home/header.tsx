@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-// import { ThemeToggle } from "@/components/ui/toggle-theme";
+import { Button } from "@/components/ui/button";
 import UserButton from "../auth/components/user-button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
@@ -45,30 +45,16 @@ export function Header() {
                       VibeCode Editor
                     </span>
                   </Link>
-                  <span className="text-zinc-300 dark:text-zinc-700">|</span>
-                  {/* Desktop Navigation Links */}
+<span className="text-zinc-300 dark:text-zinc-700">|</span>
+                  {/* Desktop Navigation — CTA Button */}
                   <div className="hidden sm:flex items-center gap-4">
-                    <Link
-                      href="/docs/components/background-paths"
-                      className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors"
-                    >
-                      Docs
-                    </Link>
-                    {/* <Link
-                                            href="/pricing"
-                                            className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors"
-                                        >
-                                            Pricing
-                                        </Link> */}
-                    <Link
-                      href="https://codesnippetui.pro/templates?utm_source=codesnippetui.com&utm_medium=header"
-                      target="_blank"
-                      className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors flex items-center gap-2"
-                    >
-                      API
-                      <span className="text-green-500 dark:text-green-400 border border-green-500 dark:border-green-400 rounded-lg px-1 py-0.5 text-xs">
-                        New
-                      </span>
+                    <Link href="/dashboard">
+                      <Button
+                        size="sm"
+                        className="bg-[#E93F3F] hover:bg-[#d43535] text-white font-medium rounded-full px-5 shadow-md hover:shadow-[0_10px_30px_rgba(233,63,63,0.15)] transition-all duration-200"
+                      >
+                        Get Started
+                      </Button>
                     </Link>
                   </div>
                 </div>
@@ -81,19 +67,15 @@ export function Header() {
                   <UserButton />
                 </div>
 
-                {/* Mobile Navigation remains unchanged */}
+                {/* Mobile Navigation */}
                 <div className="flex sm:hidden items-center gap-4">
-                  <Link
-                    href="/docs/components/action-search-bar"
-                    className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors"
-                  >
-                    Docs
-                  </Link>
-                  <Link
-                    href="/pricing"
-                    className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors"
-                  >
-                    API
+                  <Link href="/dashboard">
+                    <Button
+                      size="sm"
+                      className="bg-[#E93F3F] hover:bg-[#d43535] text-white font-medium rounded-full px-4 shadow-md text-xs"
+                    >
+                      Get Started
+                    </Button>
                   </Link>
                   <ThemeToggle />
                   <UserButton />

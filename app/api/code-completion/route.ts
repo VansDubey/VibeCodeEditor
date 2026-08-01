@@ -1,5 +1,45 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+// Small in-memory cache: repeated identical code-completion requests
+// (same content + cursor + type) are answered instantly instead of
+// hitting the local AI model again. Keyed by a hash of the request.
+const suggestionCache = new Map<string, { suggestion: string; context: CodeContext; at: number }>();
+const CACHE_MAX_SIZE = 100;
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function cacheKey(content: string, line: number, column: number, type: string): string {
+  // Use a bounded slice of content for the key to avoid unbounded memory.
+  const sample = content.slice(0, 4000);
+  return `${type}|${line}|${column}|${sample}`;
+}
+
+function hashKey(key: string): string {
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) {
+    h = (h * 33) ^ key.charCodeAt(i);
+  }
+  return (h >>> 0).toString(36);
+}
+
+function getCached(hash: string): { suggestion: string; context: CodeContext } | null {
+  const entry = suggestionCache.get(hash);
+  if (!entry) return null;
+  if (Date.now() - entry.at > CACHE_TTL_MS) {
+    suggestionCache.delete(hash);
+    return null;
+  }
+  return { suggestion: entry.suggestion, context: entry.context };
+}
+
+function setCached(hash: string, suggestion: string, context: CodeContext): void {
+  if (suggestionCache.size >= CACHE_MAX_SIZE) {
+    // Evict oldest entry
+    const oldestKey = suggestionCache.keys().next().value;
+    if (oldestKey) suggestionCache.delete(oldestKey);
+  }
+  suggestionCache.set(hash, { suggestion, context, at: Date.now() });
+}
+
 
 interface CodeSuggestionRequest {
   fileContent: string;
@@ -37,6 +77,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check cache first — instant response for repeated requests
+    const hash = hashKey(cacheKey(fileContent, cursorLine, cursorColumn, suggestionType));
+    const cached = getCached(hash);
+    if (cached) {
+      console.log("Code-completion cache hit");
+      return NextResponse.json({
+        suggestion: cached.suggestion,
+        context: cached.context,
+        cached: true,
+        metadata: {
+          language: cached.context.language,
+          framework: cached.context.framework,
+          position: cached.context.cursorPosition,
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    }
+
     const context = analyzeCodeContext(
       fileContent,
       cursorLine,
@@ -47,6 +105,9 @@ export async function POST(request: NextRequest) {
     const prompt = buildPrompt(context, suggestionType);
 
     const suggestion = await generateSuggestion(prompt);
+
+    // Store in cache
+    setCached(hash, suggestion, context);
 
     return NextResponse.json({
       suggestion,

@@ -1,12 +1,18 @@
 import {
   readTemplateStructureFromJson,
   saveTemplateStructureToJson,
+  type TemplateFolder,
 } from "@/modules/playground/lib/path-to-json";
 import { db } from "@/lib/db";
 import { templatePaths } from "@/lib/template";
 import path from "path";
 import fs from "fs/promises";
 import { NextRequest } from "next/server";
+
+// In-memory cache keyed by template key (e.g. "REACT", "NEXTJS").
+// Cache lives for the lifetime of the server process, so repeated playground
+// loads for the same template skip the filesystem scan entirely.
+const templateJsonCache = new Map<string, TemplateFolder>();
 
 function validateJsonStructure(data: unknown): boolean {
   try {
@@ -45,6 +51,14 @@ const playground = await db.playground.findUnique({
   }
 
   try {
+    // Return from cache if available
+    const cached = templateJsonCache.get(templateKey);
+    if (cached) {
+      console.log(`Template cache hit for ${templateKey}`);
+      return Response.json({ success: true, templateJson: cached }, { status: 200 });
+    }
+
+    console.log(`Template cache miss for ${templateKey}, scanning filesystem...`);
     const inputPath = path.join(process.cwd() , templatePath);
     const outputFile = path.join(process.cwd() , `output/${templateKey}.json`);
 
@@ -59,6 +73,8 @@ const playground = await db.playground.findUnique({
 
     await fs.unlink(outputFile)
 
+    // Store in cache for subsequent requests
+    templateJsonCache.set(templateKey, result);
 
       return Response.json({ success: true, templateJson: result }, { status: 200 });
   } catch (error) {

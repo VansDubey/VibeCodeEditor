@@ -47,7 +47,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import "katex/dist/katex.min.css";
 import Image from "next/image";
-import Stream from "stream";
 
 interface ChatMessage {
     role: "user" | "assistant";
@@ -153,7 +152,7 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
         }
     };
 
-   const handleSendMessage = async (e: React.FormEvent) => {
+const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
@@ -166,7 +165,7 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
         ? "error_fix"
         : "optimization";
 
-    const newMessage: ChatMessage = {
+    const userMessage: ChatMessage = {
       role: "user",
       content: input.trim(),
       timestamp: new Date(),
@@ -174,13 +173,95 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
       type: messageType,
     };
 
-    setMessages((prev) => [...prev, newMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
 
-    try {
-      const contextualMessage = getChatModePrompt(chatMode, input.trim());
+    const contextualMessage = getChatModePrompt(chatMode, input.trim());
 
+    // If streaming is enabled, use SSE for progressive rendering
+    if (streamResponse) {
+      // Create a placeholder assistant message that we'll fill in as tokens arrive
+      const assistantId = (Date.now() + 1).toString();
+      const assistantMessage: ChatMessage = {
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+        id: assistantId,
+        type: messageType,
+        model: "AI Assistant",
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: contextualMessage,
+            history: messages.slice(-10).map((msg) => ({
+              role: msg.role,
+              content: msg.content,
+            })),
+            stream: true,
+          }),
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          accumulated += chunk;
+
+          // Update the assistant message in-place (progressive rendering)
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantId
+                ? { ...msg, content: accumulated }
+                : msg
+            )
+          );
+        }
+
+        // Final update: ensure the full content is set
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId
+              ? { ...msg, content: accumulated }
+              : msg
+          )
+        );
+      } catch (error) {
+        console.error("Streaming error:", error);
+        // Replace placeholder with error message
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantId
+              ? {
+                  ...msg,
+                  content:
+                    "I'm having trouble connecting right now. Please check your internet connection and try again.",
+                }
+              : msg
+          )
+        );
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Non-streaming fallback
+    try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -192,9 +273,7 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
             role: msg.role,
             content: msg.content,
           })),
-          stream: streamResponse,
-          mode: chatMode,
-          model,
+          stream: false,
         }),
       });
 
@@ -207,7 +286,7 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
             role: "assistant",
             content: data.response,
             timestamp: new Date(),
-            id: Date.now().toString(),
+            id: (Date.now() + 1).toString(),
             type: messageType,
             tokens: data.tokens,
             model: data.model || "AI Assistant",
@@ -221,7 +300,7 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
             content:
               "Sorry, I encountered an error while processing your request. Please try again.",
             timestamp: new Date(),
-            id: Date.now().toString(),
+            id: (Date.now() + 1).toString(),
           },
         ]);
       }
@@ -234,7 +313,7 @@ export const AIChatSidePanel: React.FC<AIChatSidePanelProps> = ({
           content:
             "I'm having trouble connecting right now. Please check your internet connection and try again.",
           timestamp: new Date(),
-          id: Date.now().toString(),
+          id: (Date.now() + 1).toString(),
         },
       ]);
     } finally {
